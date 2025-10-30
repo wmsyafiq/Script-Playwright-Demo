@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Playwright Demo</title>
+  <link rel="icon" href="data:," />
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='demo.css') }}">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+  <header class="header">
+    <h1 class="title">Playwright Demo</h1>
+    <p class="subtitle">Interactive Progress · Cancel + Clear Logs</p>
+  </header>
+
+  <main class="grid">
+    <!-- Left: circular control -->
+    <section class="card center">
+      <div class="gauge">
+        <svg class="gauge-svg" viewBox="0 0 260 260" aria-hidden="true">
+          <circle class="track" cx="130" cy="130" r="104"/>
+          <circle id="ring" class="ring idle" cx="130" cy="130" r="104"/>
+        </svg>
+
+        <!-- main button (toggles run/cancel) -->
+        <button id="mainBtn" class="gauge-btn" aria-label="Run Playwright demo">
+          <div id="pct" class="pct">0%</div>
+          <div class="label" id="btnLabel">Run Playwright</div>
+        </button>
+      </div>
+
+      <!-- Clear Logs button -->
+      <div class="row" style="margin-top:20px;">
+        <button id="clearBtn" class="gauge-cancel" style="position:static;">Clear Logs</button>
+      </div>
+    </section>
+
+    <!-- Right: console -->
+    <section class="card">
+      <div class="row">
+        <div class="mini-tip">Logs stream live while the ring fills. Tap again to cancel.</div>
+      </div>
+      <pre id="output" class="console"></pre>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="muted">Demo launches safe Playwright pages. Works on desktop & mobile.</div>
+  </footer>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const out = $("#output");
+    const ring = $("#ring");
+    const pctEl = $("#pct");
+    const mainBtn = $("#mainBtn");
+    const btnLabel = $("#btnLabel");
+    const clearBtn = $("#clearBtn");
+
+    let isRunning = false;
+
+    // Log rendering
+    function log(m) {
+      out.textContent += m + "\n";
+      out.scrollTop = out.scrollHeight;
+    }
+
+    // Progress ring setup
+    const R = 104, C = 2 * Math.PI * R;
+    ring.style.strokeDasharray = `${C} ${C}`;
+    ring.style.strokeDashoffset = C;
+
+    function setPercent(p) {
+      const n = Math.max(0, Math.min(100, p | 0));
+      ring.style.strokeDashoffset = C * (1 - n / 100);
+      pctEl.textContent = n + "%";
+      if (n === 0) { ring.classList.add("idle"); ring.classList.remove("active","done"); }
+      else if (n < 100) { ring.classList.add("active"); ring.classList.remove("idle","done"); }
+      else { ring.classList.add("done"); ring.classList.remove("idle","active"); }
+      if (n >= 100) setRunningUI(false);
+    }
+
+    function setRunningUI(running) {
+      if (running) {
+        btnLabel.textContent = "Cancel";
+        mainBtn.classList.add("cancel-mode");
+      } else {
+        btnLabel.textContent = "Run Playwright";
+        mainBtn.classList.remove("cancel-mode");
+      }
+      isRunning = running;
+    }
+
+    // Socket wiring
+    const socket = io();
+    socket.on("connect", () => log("[CLIENT] connected"));
+    socket.on("log", ({message}) => log(message));
+    socket.on("progress", ({percent}) => setPercent(percent));
+    socket.on("status", ({running}) => setRunningUI(running));
+
+    // Toggle Run / Cancel
+    mainBtn.onclick = () => {
+      if (!isRunning) {
+        log("[CLIENT] requesting Playwright run…");
+        setPercent(0);
+        setRunningUI(true);
+        socket.emit("start_logger");
+      } else {
+        log("[CLIENT] cancel requested…");
+        socket.emit("cancel_run");
+      }
+    };
+
+    // Clear logs
+    clearBtn.onclick = () => {
+      out.textContent = "";
+      log("[CLIENT] logs cleared");
+    };
+  </script>
+</body>
+</html>
